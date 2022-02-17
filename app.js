@@ -3,13 +3,13 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
 const multer = require('multer');
+const { graphqlHTTP } = require('express-graphql');
 
-const { Server } = require("socket.io");
+const graphQlSchema = require('./grapql/schema');
+const graphQlResolver = require('./grapql/resolvers');
+const auth = require('./middleware/isAuthenticated');
 
 require('dotenv').config({ path: './.env' })
-
-const feedRoutes = require('./routes/feed');
-const authRoutes = require('./routes/auth');
 
 const fileStorage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -36,6 +36,10 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
     next();
 });
 app.use('/images', express.static(path.join(__dirname, 'images')));
@@ -44,30 +48,30 @@ app.use(
     .single('image')
 );
 
-app.use('/feed', feedRoutes);
-app.use('/auth', authRoutes);
+app.use(auth);
 
-app.use((error, req, res, next) => {
-    const statusCode = error.statusCode || 500,
-          message = error.message,
-          data = error.data || [];
+app.use('/graphql', graphqlHTTP({
+    schema: graphQlSchema,
+    rootValue: graphQlResolver,
+    graphiql: true,
+    customFormatErrorFn(err) {
+        if (!err.originalError) {
+            return err;
+        }
+        const data = err.originalError.data,
+              message = err.message || 'An error occured',
+              code = err.code || 500;
 
-    res.status(statusCode).json({
-        message,
-        data
-    })
-});
+        return { message, status: code, data }
+    }
+}));
 
 mongoose
     .connect(
         `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@restapiwithmongo.spews.mongodb.net/${process.env.DB_NAME}?retryWrites=true&w=majority`
     )
     .then(client => {
-        const server = app.listen(8080);
-        const io = require('./socket').init(server);
-        io.on('connection', (socket) => {
-            console.log('a new user connected');
-        });
+        app.listen(8080);
     })
     .catch(e => {
         console.log('Failed to connect to server', e);

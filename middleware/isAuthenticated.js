@@ -2,22 +2,28 @@ const jwt = require('jsonwebtoken');
 
 module.exports = (req, res, next) => {
     const token = req.get('Authorization');
+
+    if (!token) {
+        req.isAuth = false;
+        return next();
+    }
+
     let decordedToken;
 
     try {
         decordedToken = jwt.verify(token, process.env.JWT_SECRET_KEY);
     } catch(err) {
-        err.statusCode = 500;
-        throw err;
+        req.isAuth = false;
+        return next();
     }
 
     if (!decordedToken) {
-        const err = new Error('Not authenticated');
-        err.statusCode = 401;
-        throw err;
+        req.isAuth = false;
+        return next();
     }
-    req.userId = decordedToken.id;
+    req.userId = decordedToken.userId;
     req.email = decordedToken.email;
+    req.isAuth = true;
 
     next();
 };
